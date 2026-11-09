@@ -1,0 +1,90 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-35jh-r3h4-6jhm",
+        "dataSource": "https://github.com/advisories/GHSA-35jh-r3h4-6jhm",
+        "namespace": "github:language:javascript",
+        "severity": "High",
+        "urls": ["https://nvd.nist.gov/vuln/detail/CVE-2021-23337"],
+        "description": "Command Injection in lodash",
+        "cvss": [
+          {
+            "version": "3.1",
+            "vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H",
+            "metrics": { "baseScore": 7.2, "exploitabilityScore": 1.2, "impactScore": 5.9 },
+            "vendorMetadata": {}
+          }
+        ],
+        "fix": { "versions": ["4.17.21"], "state": "fixed" },
+        "advisories": []
+      },
+      "relatedVulnerabilities": [
+        {
+          "id": "CVE-2021-23337",
+          "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2021-23337",
+          "namespace": "nvd:cpe",
+          "severity": "High",
+          "description": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+          "cvss": [ { "version": "3.1", "metrics": { "baseScore": 7.2 } } ]
+        }
+      ],
+      "matchDetails": [ { "type": "exact-direct-match", "matcher": "javascript-matcher" } ],
+      "artifact": {
+        "id": "4f7c2a9e1b3d5c6a",
+        "name": "lodash",
+        "version": "4.17.20",
+        "type": "npm",
+        "locations": [ { "path": "/package-lock.json", "accessPath": "/package-lock.json" } ],
+        "language": "javascript",
+        "licenses": ["MIT"],
+        "cpes": ["cpe:2.3:a:lodash:lodash:4.17.20:*:*:*:*:*:*:*"],
+        "purl": "pkg:npm/lodash@4.17.20",
+        "upstreams": []
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-jfh8-c2jp-5v3q",
+        "dataSource": "https://github.com/advisories/GHSA-jfh8-c2jp-5v3q",
+        "namespace": "github:language:java",
+        "severity": "Critical",
+        "description": "Remote code injection in Log4j",
+        "cvss": [ { "version": "3.1", "metrics": { "baseScore": 10.0 } } ],
+        "fix": { "versions": ["2.15.0"], "state": "fixed" }
+      },
+      "relatedVulnerabilities": [
+        { "id": "CVE-2021-44228", "dataSource": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228", "severity": "Critical" }
+      ],
+      "artifact": {
+        "name": "log4j-core",
+        "version": "2.14.1",
+        "type": "java-archive",
+        "locations": [ { "path": "/pom.xml" } ],
+        "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
+      }
+    },
+    {
+      "vulnerability": {
+        "id": "GHSA-c2qf-rxjj-qqgw",
+        "dataSource": "https://github.com/advisories/GHSA-c2qf-rxjj-qqgw",
+        "namespace": "github:language:javascript",
+        "severity": "Medium",
+        "description": "semver vulnerable to Regular Expression Denial of Service",
+        "cvss": [ { "version": "3.1", "metrics": { "baseScore": 5.3 } } ],
+        "fix": { "versions": [], "state": "not-fixed" }
+      },
+      "relatedVulnerabilities": [ { "id": "CVE-2022-25883" } ],
+      "artifact": {
+        "name": "semver",
+        "version": "7.5.1",
+        "type": "npm",
+        "locations": [ { "path": "/package-lock.json" } ],
+        "purl": "pkg:npm/semver@7.5.1"
+      }
+    }
+  ],
+  "source": { "type": "directory", "target": "." },
+  "distro": { "name": "", "version": "", "idLike": null },
+  "descriptor": { "name": "grype", "version": "0.84.0", "configuration": {}, "db": {} }
+}

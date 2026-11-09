@@ -1,0 +1,125 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-11-09T10:12:44.118Z",
+  "ArtifactName": "demo-app",
+  "ArtifactType": "repository",
+  "Metadata": {
+    "ImageConfig": { "architecture": "", "created": "0001-01-01T00:00:00Z", "os": "", "rootfs": { "type": "", "diff_ids": null }, "config": {} }
+  },
+  "Results": [
+    {
+      "Target": "package-lock.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-23337",
+          "PkgID": "lodash@4.17.20",
+          "PkgName": "lodash",
+          "PkgIdentifier": { "PURL": "pkg:npm/lodash@4.17.20", "UID": "8a1e3b2c4d5f6a7b" },
+          "InstalledVersion": "4.17.20",
+          "FixedVersion": "4.17.21",
+          "Status": "fixed",
+          "Layer": {},
+          "SeveritySource": "ghsa",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-23337",
+          "DataSource": { "ID": "ghsa", "Name": "GitHub Security Advisory npm", "URL": "https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm" },
+          "Title": "nodejs-lodash: command injection via template",
+          "Description": "Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.",
+          "Severity": "HIGH",
+          "CweIDs": ["CWE-77", "CWE-94"],
+          "VendorSeverity": { "ghsa": 3, "nvd": 3 },
+          "CVSS": {
+            "ghsa": { "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H", "V3Score": 7.2 },
+            "nvd": { "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H", "V3Score": 7.2 }
+          },
+          "References": ["https://github.com/advisories/GHSA-35jh-r3h4-6jhm"],
+          "PublishedDate": "2021-02-15T13:15:12.56Z",
+          "LastModifiedDate": "2024-11-21T05:51:31.643Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2020-28500",
+          "PkgID": "lodash@4.17.20",
+          "PkgName": "lodash",
+          "PkgIdentifier": { "PURL": "pkg:npm/lodash@4.17.20" },
+          "InstalledVersion": "4.17.20",
+          "FixedVersion": "4.17.21",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2020-28500",
+          "Title": "nodejs-lodash: ReDoS via the toNumber, trim and trimEnd functions",
+          "Description": "Lodash versions prior to 4.17.21 are vulnerable to Regular Expression Denial of Service (ReDoS).",
+          "Severity": "MEDIUM",
+          "CVSS": { "nvd": { "V3Score": 5.3 } }
+        }
+      ]
+    },
+    {
+      "Target": "pom.xml",
+      "Class": "lang-pkgs",
+      "Type": "pom",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2021-44228",
+          "PkgName": "org.apache.logging.log4j:log4j-core",
+          "PkgIdentifier": { "PURL": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1" },
+          "InstalledVersion": "2.14.1",
+          "FixedVersion": "2.15.0",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2021-44228",
+          "Title": "log4j-core: Remote code execution in Log4j 2.x when logs contain an attacker-controlled string value",
+          "Description": "Apache Log4j2 JNDI features do not protect against attacker controlled LDAP and other JNDI related endpoints.",
+          "Severity": "CRITICAL",
+          "CVSS": { "nvd": { "V3Score": 10 } }
+        }
+      ]
+    },
+    {
+      "Target": "config/settings.env",
+      "Class": "secret",
+      "Secrets": [
+        {
+          "RuleID": "aws-access-key-id",
+          "Category": "AWS",
+          "Severity": "CRITICAL",
+          "Title": "AWS Access Key ID",
+          "StartLine": 3,
+          "EndLine": 3,
+          "Code": { "Lines": [ { "Number": 3, "Content": "AWS_ACCESS_KEY_ID=********************", "IsCause": true } ] },
+          "Match": "AWS_ACCESS_KEY_ID=********************",
+          "Layer": {}
+        }
+      ]
+    },
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Type": "dockerfile",
+      "MisconfSummary": { "Successes": 20, "Failures": 1 },
+      "Misconfigurations": [
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS002",
+          "AVDID": "AVD-DS-0002",
+          "Title": "Image user should not be 'root'",
+          "Description": "Running containers with 'root' user can lead to a container escape situation.",
+          "Message": "Specify at least 1 USER command in Dockerfile with non-root user as argument",
+          "Namespace": "builtin.dockerfile.DS002",
+          "Resolution": "Add 'USER <non root user name>' line to the Dockerfile",
+          "Severity": "HIGH",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/ds002",
+          "Status": "FAIL",
+          "CauseMetadata": { "Provider": "Dockerfile", "Service": "general", "Code": { "Lines": null } }
+        },
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS026",
+          "AVDID": "AVD-DS-0026",
+          "Title": "No HEALTHCHECK defined",
+          "Severity": "LOW",
+          "Status": "PASS",
+          "CauseMetadata": { "Provider": "Dockerfile", "Service": "general" }
+        }
+      ]
+    }
+  ]
+}
