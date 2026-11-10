@@ -1,0 +1,37 @@
+name: Bug report
+description: fhub crashed, mis-parsed a file, or ranked something wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security vulnerability?** Please don't file it here; see SECURITY.md.
+        **Never paste real secrets or internal data.** Sanitize any scanner output first.
+  - type: input
+    id: version
+    attributes:
+      label: fhub version
+      description: Output of `fhub --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Parsing a scanner format, Duplicate merging, Prioritization, Policy / suppressions / baseline, Exploit intelligence (KEV/EPSS/OSV), GitHub Action, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Command line, plus a minimal sanitized input file (scanner name and version help a lot).
+      render: shell
+    validations:
+      required: true

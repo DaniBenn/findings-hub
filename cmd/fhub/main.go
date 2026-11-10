@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -23,6 +24,15 @@ import (
 
 // Set at build time: -ldflags "-X main.version=v0.1.0"
 var version = "dev"
+
+func init() {
+	// `go install ...@v0.1.0` builds carry the module version but no ldflags.
+	if version == "dev" {
+		if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			version = strings.TrimPrefix(bi.Main.Version, "v")
+		}
+	}
+}
 
 // Exit codes are part of the CI contract.
 const (
