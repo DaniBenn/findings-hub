@@ -1,0 +1,5 @@
+# Normalize line endings: LF in the repo for every platform.
+* text=auto eol=lf
+
+# Scanner fixtures must stay byte-for-byte as committed.
+testdata/** -text

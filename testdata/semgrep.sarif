@@ -1,0 +1,62 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Semgrep OSS",
+          "semanticVersion": "1.95.0",
+          "rules": [
+            {
+              "id": "java.lang.security.audit.sqli.jdbc-sqli.jdbc-sqli",
+              "name": "java.lang.security.audit.sqli.jdbc-sqli.jdbc-sqli",
+              "shortDescription": { "text": "Semgrep Finding: java.lang.security.audit.sqli.jdbc-sqli.jdbc-sqli" },
+              "fullDescription": { "text": "Detected a formatted string in a SQL statement. This could lead to SQL injection." },
+              "helpUri": "https://semgrep.dev/r/java.lang.security.audit.sqli.jdbc-sqli.jdbc-sqli",
+              "defaultConfiguration": { "level": "warning" },
+              "properties": { "precision": "very-high", "tags": ["CWE-89: SQL Injection", "OWASP-A03:2021 - Injection", "security"], "security-severity": "8.1" }
+            },
+            {
+              "id": "java.lang.security.audit.weak-random.weak-random",
+              "name": "java.lang.security.audit.weak-random.weak-random",
+              "shortDescription": { "text": "Semgrep Finding: weak-random" },
+              "defaultConfiguration": { "level": "note" },
+              "properties": { "tags": ["CWE-330", "security"] }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "java.lang.security.audit.sqli.jdbc-sqli.jdbc-sqli",
+          "ruleIndex": 0,
+          "level": "warning",
+          "message": { "text": "Detected a formatted string in a SQL statement. This could lead to SQL injection." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "src/main/java/com/demo/UserRepo.java", "uriBaseId": "%SRCROOT%" },
+                "region": { "startLine": 42, "endLine": 42, "snippet": { "text": "    stmt.executeQuery(\"SELECT * FROM users WHERE id = \" + id);" } }
+              }
+            }
+          ],
+          "fingerprints": { "matchBasedId/v1": "a3f9e4c1" }
+        },
+        {
+          "ruleId": "java.lang.security.audit.weak-random.weak-random",
+          "ruleIndex": 1,
+          "message": { "text": "Use of java.util.Random for security-sensitive value." },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "./src/main/java/com/demo/Token.java" },
+                "region": { "startLine": 12, "snippet": { "text": "Random r = new Random();" } }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
