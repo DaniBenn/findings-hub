@@ -1,0 +1,20 @@
+name: Feature request
+description: A new input format, integration, or idea
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe your workflow and what's painful today, rather than the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: input
+    id: scanners
+    attributes:
+      label: Scanners / CI system you use
+      placeholder: e.g. Trivy + Semgrep on GitLab CI
