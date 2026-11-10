@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/DaniBenn/findings-hub/internal/enrich"
 	"github.com/DaniBenn/findings-hub/internal/model"
 )
 
@@ -24,6 +25,7 @@ type Summary struct {
 	GateFailOn []string       `json:"gate_fail_on"`
 	GateFailed bool           `json:"gate_failed"`
 	Blocking   int            `json:"blocking_findings"`
+	Intel      enrich.Info    `json:"intel"`
 }
 
 // Report is the full result of a run.
@@ -85,7 +87,7 @@ func writeMarkdown(w io.Writer, r Report) error {
 	if s.GateFailed {
 		status = fmt.Sprintf("❌ **Security gate failed**: %d blocking finding(s) at %s", s.Blocking, strings.Join(s.GateFailOn, "/"))
 	}
-	fmt.Fprintf(w, "## Security findings\n\n%s\n\n%s\n\n", status, summaryLine(s))
+	fmt.Fprintf(w, "## Security findings\n\n%s\n\n%s\n\n", status, strings.ReplaceAll(summaryLine(s), "\n", "\n\n"))
 	if len(r.Findings) == 0 {
 		return nil
 	}
@@ -109,7 +111,27 @@ func summaryLine(s Summary) string {
 		}
 		fmt.Fprintf(&b, "%s:%d", p, s.ByPriority[p])
 	}
+	b.WriteString("\n")
+	b.WriteString(intelLine(s.Intel))
 	return b.String()
+}
+
+func intelLine(i enrich.Info) string {
+	if !i.Enabled {
+		return "Exploit intelligence: OFF (ranked by severity only)."
+	}
+	s := fmt.Sprintf("Exploit intelligence: CISA KEV %s, EPSS %s", orDash(i.KEVVersion), orDash(i.EPSSDate))
+	if i.AliasesUsed > 0 {
+		s += fmt.Sprintf(", %d OSV alias(es) resolved", i.AliasesUsed)
+	}
+	return s + "."
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // ID is the primary identifier shown for a finding.

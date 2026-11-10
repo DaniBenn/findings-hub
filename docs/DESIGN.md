@@ -139,8 +139,17 @@ Format is auto-detected from content, not file extension.
 | CISA KEV (JSON feed) | Known exploited vulns | daily |
 | OSV.dev (API / bulk) | GHSA ↔ CVE aliases, fixed versions | on demand, cached |
 
-Cache: `~/.cache/fhub` (OS-appropriate). Integrity-checked, with a max age; `--offline` uses the cache only and
-warns if stale. Exact feed URLs are verified at implementation time (EPSS moved hosts in 2025).
+Cache: OS user cache dir + `/fhub` (override: `--cache-dir` / `FHUB_CACHE_DIR`).
+
+- **Refresh:** `fhub check` refreshes feeds older than 24h (ETag-conditional); `--offline` never touches the network.
+- **Integrity:** every cached file is SHA-256 checked against `meta.json` on load. Downloads are validated *before*
+  they replace the cache, so a bad or empty feed never clobbers good data.
+- **Fail closed:** if no exploit data is available, `check` errors (exit 2) rather than silently ranking by severity,
+  which could hide a P0. `--no-enrich` opts out explicitly. Data older than 72h triggers a warning.
+- **Privacy:** the only outbound data is public advisory IDs (GHSA/PYSEC/…) sent to OSV, for findings without a CVE.
+  The User-Agent is `fhub/<version>`. HTTPS only, also across redirects.
+- **Feeds (verified 2026-11):** `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json`,
+  `https://epss.empiricalsecurity.com/epss_scores-current.csv.gz` (EPSS's new host), `https://api.osv.dev/v1/vulns/{id}`.
 
 ## 10. Code layout
 
