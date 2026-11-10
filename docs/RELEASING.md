@@ -15,6 +15,16 @@
    - runs `release-smoke.yml` against the published release: cosign signature, checksums, provenance, and the
      Action installing the real binary on Linux, macOS and Windows. To re-run it by hand:
      `gh workflow run release-smoke.yml -f tag=vX.Y.Z`
+   - if the smoke test passed, moves the floating major tag (`v0`, `v1`, …) to the new release, so
+     `uses: DaniBenn/findings-hub@v0` gets it. Pre-releases never move it.
+4. **Publish to the GitHub Marketplace (manual, about 1 minute).** GitHub has no API for this, so the automated release
+   isn't listed until you do it:
+   - Releases → the new release → **Edit** (✏️)
+   - tick **Publish this Action to the GitHub Marketplace**
+   - categories: **Security** (primary), **Continuous integration** (secondary)
+   - **Update release** (2FA prompt)
+
+   Don't use the "Draft a release" banner on `action.yml`: it creates the tag by hand and bypasses the signed pipeline.
 
 Tags with a suffix (`v0.2.0-rc.1`) are published as pre-releases.
 

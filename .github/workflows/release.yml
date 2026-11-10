@@ -49,3 +49,29 @@ jobs:
     uses: ./.github/workflows/release-smoke.yml
     with:
       tag: ${{ github.ref_name }}
+
+  # Move the floating major tag (v0, v1, ...) so `uses: DaniBenn/findings-hub@v0`
+  # follows the latest release. Only after the smoke test passed, and never for
+  # pre-releases (v1.2.0-rc.1).
+  float-major-tag:
+    needs: smoke
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: point v<major> at this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in v[0-9]*.*.*) ;; *) echo "unexpected tag $TAG"; exit 1 ;; esac
+          major="${TAG%%.*}"
+          if gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$major" --jq '.[].ref' | grep -qx "refs/tags/$major"; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$major" -f sha="$SHA" -F force=true > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$major" -f sha="$SHA" > /dev/null
+          fi
+          echo "$major -> $TAG ($SHA)" | tee -a "$GITHUB_STEP_SUMMARY"
