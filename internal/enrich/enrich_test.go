@@ -90,8 +90,8 @@ func TestFreshCacheSkipsNetworkAndETag(t *testing.T) {
 	if n := srv.hits["kev"].Load(); n != 1 {
 		t.Errorf("fresh cache should not refetch: %d KEV requests", n)
 	}
-	// Force-expire: KEV comes back 304 via ETag, cache stays valid.
-	opts.MaxAge = time.Nanosecond
+	// Expire the cache: KEV comes back 304 via ETag, cache stays valid.
+	srv.advance(DefaultMaxAge + time.Hour)
 	if _, err := Update(ctx, opts, false); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestFailedRefreshKeepsOldData(t *testing.T) {
 	srv.failKEV.Store(true)
 	var warned bool
 	opts.Warn = func(string) { warned = true }
-	opts.MaxAge = time.Nanosecond
+	srv.advance(DefaultMaxAge + time.Hour) // cache is now due for a refresh
 	e, err := Open(ctx, opts)
 	if err != nil {
 		t.Fatalf("should fall back to cached data: %v", err)

@@ -22,6 +22,7 @@ type feedServer struct {
 	kevETag    string
 	failKEV    atomic.Bool
 	corruptKEV atomic.Bool
+	clock      atomic.Int64 // test time, unix nanoseconds
 }
 
 func newFeedServer(t *testing.T) *feedServer {
@@ -88,11 +89,19 @@ func newFeedServer(t *testing.T) *feedServer {
 }
 
 func (fs *feedServer) options(t *testing.T, dir string) Options {
+	if fs.clock.Load() == 0 {
+		fs.clock.Store(time.Now().Truncate(time.Second).UnixNano())
+	}
 	return Options{
 		CacheDir: dir,
 		Sources:  Sources{KEV: fs.URL + "/kev.json", EPSS: fs.URL + "/epss.csv.gz", OSV: fs.URL},
 		Fetcher:  &Fetcher{Client: fs.Client(), UserAgent: "fhub/test"},
 		Warn:     func(s string) { t.Log("warn:", s) },
-		Now:      time.Now,
+		// A controlled clock: tests advance it explicitly instead of relying on
+		// wall-clock ticks (Windows' clock is too coarse for that).
+		Now: func() time.Time { return time.Unix(0, fs.clock.Load()) },
 	}
 }
+
+// advance moves the test clock forward.
+func (fs *feedServer) advance(d time.Duration) { fs.clock.Add(int64(d)) }
