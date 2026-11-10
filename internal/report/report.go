@@ -26,6 +26,10 @@ type Summary struct {
 	GateFailed bool           `json:"gate_failed"`
 	Blocking   int            `json:"blocking_findings"`
 	Intel      enrich.Info    `json:"intel"`
+	Suppressed int            `json:"suppressed"`
+	Baselined  int            `json:"baselined"`
+	Escalated  int            `json:"escalated_from_baseline"`
+	Warnings   []string       `json:"warnings"`
 }
 
 // Report is the full result of a run.
@@ -34,6 +38,24 @@ type Report struct {
 	Tool          Tool            `json:"tool"`
 	Summary       Summary         `json:"summary"`
 	Findings      []model.Finding `json:"findings"`
+
+	// ShowAll includes suppressed and baselined findings in table/markdown
+	// output. JSON always contains everything, with a status per finding.
+	ShowAll bool `json:"-"`
+}
+
+// visible returns the findings to render for humans.
+func (r Report) visible() []model.Finding {
+	if r.ShowAll {
+		return r.Findings
+	}
+	var out []model.Finding
+	for _, f := range r.Findings {
+		if f.Status == "" || f.Status == model.StatusOpen {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Tool identifies the fhub build that produced the report.
@@ -62,14 +84,14 @@ func Write(w io.Writer, r Report, format string) error {
 }
 
 func writeTable(w io.Writer, r Report) error {
-	if len(r.Findings) == 0 {
-		fmt.Fprintln(w, "No findings.")
+	if fs := r.visible(); len(fs) == 0 {
+		fmt.Fprintln(w, "No open findings.")
 	} else {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, "PRI\tSEVERITY\tKIND\tID\tWHERE\tWHY\tSOURCES")
-		for _, f := range r.Findings {
+		for _, f := range fs {
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				f.Priority, f.Severity, f.Kind,
+				priLabel(f), f.Severity, f.Kind,
 				truncLeft(ID(f), 28), truncLeft(Where(f), 40), trunc(firstReason(f), 60), trunc(scanners(f), 24))
 		}
 		if err := tw.Flush(); err != nil {
@@ -88,14 +110,15 @@ func writeMarkdown(w io.Writer, r Report) error {
 		status = fmt.Sprintf("❌ **Security gate failed**: %d blocking finding(s) at %s", s.Blocking, strings.Join(s.GateFailOn, "/"))
 	}
 	fmt.Fprintf(w, "## Security findings\n\n%s\n\n%s\n\n", status, strings.ReplaceAll(summaryLine(s), "\n", "\n\n"))
-	if len(r.Findings) == 0 {
+	fs := r.visible()
+	if len(fs) == 0 {
 		return nil
 	}
 	fmt.Fprintln(w, "| Priority | Severity | ID | Where | Why |")
 	fmt.Fprintln(w, "|---|---|---|---|---|")
-	for _, f := range r.Findings {
+	for _, f := range fs {
 		fmt.Fprintf(w, "| %s | %s | %s | %s | %s |\n",
-			f.Priority, f.Severity, mdLink(ID(f), f.URL), mdEscape(Where(f)), mdEscape(strings.Join(f.Reasons, "; ")))
+			priLabel(f), f.Severity, mdLink(ID(f), f.URL), mdEscape(Where(f)), mdEscape(strings.Join(f.Reasons, "; ")))
 	}
 	return nil
 }
@@ -111,9 +134,24 @@ func summaryLine(s Summary) string {
 		}
 		fmt.Fprintf(&b, "%s:%d", p, s.ByPriority[p])
 	}
+	if s.Suppressed > 0 || s.Baselined > 0 || s.Escalated > 0 {
+		fmt.Fprintf(&b, "\nNot gating: %d suppressed, %d baselined", s.Suppressed, s.Baselined)
+		if s.Escalated > 0 {
+			fmt.Fprintf(&b, " (%d escalated since baseline and gating again)", s.Escalated)
+		}
+		b.WriteString(". Use --show-all to list them.")
+	}
 	b.WriteString("\n")
 	b.WriteString(intelLine(s.Intel))
 	return b.String()
+}
+
+// priLabel marks non-open findings, e.g. "P2 (suppressed)".
+func priLabel(f model.Finding) string {
+	if f.Status == "" || f.Status == model.StatusOpen {
+		return f.Priority.String()
+	}
+	return f.Priority.String() + " (" + string(f.Status) + ")"
 }
 
 func intelLine(i enrich.Info) string {
