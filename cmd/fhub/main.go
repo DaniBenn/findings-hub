@@ -3,14 +3,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/DaniBenn/findings-hub/internal/check"
+	"github.com/DaniBenn/findings-hub/internal/enrich"
 	"github.com/DaniBenn/findings-hub/internal/model"
 	"github.com/DaniBenn/findings-hub/internal/prioritize"
 	"github.com/DaniBenn/findings-hub/internal/report"
@@ -30,7 +35,9 @@ const (
 var errGateFailed = errors.New("security gate failed")
 
 func main() {
-	err := newRootCmd().Execute()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	err := newRootCmd().ExecuteContext(ctx)
+	stop()
 	switch {
 	case err == nil:
 		os.Exit(exitOK)
@@ -42,7 +49,30 @@ func main() {
 	}
 }
 
+// globalFlags are shared by every command.
+type globalFlags struct {
+	cacheDir string
+	offline  bool
+}
+
+func (g *globalFlags) enrichOptions(cmd *cobra.Command) (enrich.Options, error) {
+	dir := g.cacheDir
+	if dir == "" {
+		var err error
+		if dir, err = enrich.DefaultCacheDir(); err != nil {
+			return enrich.Options{}, err
+		}
+	}
+	return enrich.Options{
+		CacheDir: dir,
+		Offline:  g.offline,
+		Fetcher:  enrich.NewFetcher(version),
+		Warn:     func(msg string) { fmt.Fprintln(cmd.ErrOrStderr(), "fhub: warning:", msg) },
+	}, nil
+}
+
 func newRootCmd() *cobra.Command {
+	g := &globalFlags{}
 	root := &cobra.Command{
 		Use:           "fhub",
 		Short:         "Turn every security scanner's output into the few findings that matter",
@@ -50,22 +80,30 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newCheckCmd())
+	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "", "exploit-intelligence cache (default: $FHUB_CACHE_DIR or the OS user cache dir)")
+	root.PersistentFlags().BoolVar(&g.offline, "offline", false, "never access the network; use cached data only")
+	root.AddCommand(newCheckCmd(g), newDBCmd(g))
 	return root
 }
 
-func newCheckCmd() *cobra.Command {
+func newCheckCmd(g *globalFlags) *cobra.Command {
 	var (
-		format string
-		failOn string
-		output string
+		format   string
+		failOn   string
+		output   string
+		noEnrich bool
 	)
 	cmd := &cobra.Command{
 		Use:   "check [flags] <scanner-output>...",
 		Short: "Ingest, deduplicate, prioritize and gate scanner results",
 		Long: `Reads one or more scanner result files (SARIF 2.1.0, Trivy JSON, Grype JSON),
-merges duplicates across scanners, assigns each finding a priority P0..P4
-with reasons, and exits non-zero if any finding hits the --fail-on gate.
+merges duplicates across scanners, enriches vulnerabilities with CISA KEV,
+FIRST EPSS and OSV data, assigns each finding a priority P0..P4 with reasons,
+and exits non-zero if any finding hits the --fail-on gate.
+
+Exploit data is cached and refreshed at most once a day. If no data can be
+loaded the command fails rather than silently ranking by severity; pass
+--no-enrich to opt out explicitly.
 
 Exit codes: 0 = passed, 1 = gate failed, 2 = error.
 Use "-" to read a single input from stdin.`,
@@ -79,12 +117,22 @@ Use "-" to read a single input from stdin.`,
 			if err != nil {
 				return err
 			}
-			rep, err := check.Run(check.Options{
+			opts := check.Options{
 				Inputs:     args,
 				FailOn:     gate,
 				Prioritize: prioritize.DefaultConfig(),
 				Tool:       report.Tool{Name: "fhub", Version: version},
-			})
+			}
+			if !noEnrich {
+				eo, err := g.enrichOptions(cmd)
+				if err != nil {
+					return err
+				}
+				if opts.Enricher, err = enrich.Open(cmd.Context(), eo); err != nil {
+					return err
+				}
+			}
+			rep, err := check.Run(cmd.Context(), opts)
 			if err != nil {
 				return err
 			}
@@ -112,7 +160,76 @@ Use "-" to read a single input from stdin.`,
 	cmd.Flags().StringVarP(&format, "format", "f", "table", "output format: "+strings.Join(report.Formats, ", "))
 	cmd.Flags().StringVar(&failOn, "fail-on", "P0", `comma-separated priorities that fail the gate ("" disables the gate)`)
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write the report to a file instead of stdout")
+	cmd.Flags().BoolVar(&noEnrich, "no-enrich", false, "skip exploit intelligence (KEV/EPSS/OSV) and rank by severity only")
 	return cmd
+}
+
+func newDBCmd(g *globalFlags) *cobra.Command {
+	db := &cobra.Command{
+		Use:   "db",
+		Short: "Manage the cached exploit-intelligence feeds (CISA KEV, FIRST EPSS)",
+	}
+
+	var force bool
+	update := &cobra.Command{
+		Use:   "update",
+		Short: "Download the latest KEV and EPSS feeds",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			eo, err := g.enrichOptions(cmd)
+			if err != nil {
+				return err
+			}
+			if !force {
+				eo.MaxAge = time.Minute // explicit update: refresh unless just done
+			}
+			st, err := enrich.Update(cmd.Context(), eo, force)
+			if st != nil {
+				printStatus(cmd, eo.CacheDir, st)
+			}
+			return err
+		},
+	}
+	update.Flags().BoolVar(&force, "force", false, "re-download even if the cache is fresh")
+
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show what exploit intelligence is cached",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			eo, err := g.enrichOptions(cmd)
+			if err != nil {
+				return err
+			}
+			st, err := enrich.Status(eo)
+			if err != nil {
+				return err
+			}
+			printStatus(cmd, eo.CacheDir, st)
+			return nil
+		},
+	}
+	db.AddCommand(update, status)
+	return db
+}
+
+func printStatus(cmd *cobra.Command, dir string, st []enrich.SourceStatus) {
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "Cache:", dir)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FEED\tDATA DATE\tRECORDS\tFETCHED\tSTATE")
+	for _, s := range st {
+		if !s.Present {
+			fmt.Fprintf(tw, "%s\t-\t-\t-\tmissing (run `fhub db update`)\n", s.Name)
+			continue
+		}
+		state := "ok"
+		if s.Stale {
+			state = "STALE"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s ago\t%s\n", s.Name, s.DataDate, s.Records, s.Age.Round(time.Minute), state)
+	}
+	tw.Flush()
 }
 
 func parsePriorities(s string) ([]model.Priority, error) {

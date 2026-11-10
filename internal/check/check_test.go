@@ -2,6 +2,7 @@ package check
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ var allInputs = []string{
 }
 
 func TestEndToEnd(t *testing.T) {
-	rep, err := Run(Options{Inputs: allInputs, FailOn: []model.Priority{model.P0}, Prioritize: prioritize.DefaultConfig()})
+	rep, err := Run(context.Background(), Options{Inputs: allInputs, FailOn: []model.Priority{model.P0}, Prioritize: prioritize.DefaultConfig()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestEndToEnd(t *testing.T) {
 }
 
 func TestGateDisabled(t *testing.T) {
-	rep, err := Run(Options{Inputs: allInputs, Prioritize: prioritize.DefaultConfig()})
+	rep, err := Run(context.Background(), Options{Inputs: allInputs, Prioritize: prioritize.DefaultConfig()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestGateDisabled(t *testing.T) {
 }
 
 func TestReportsRender(t *testing.T) {
-	rep, err := Run(Options{Inputs: allInputs, FailOn: []model.Priority{model.P0}, Prioritize: prioritize.DefaultConfig()})
+	rep, err := Run(context.Background(), Options{Inputs: allInputs, FailOn: []model.Priority{model.P0}, Prioritize: prioritize.DefaultConfig()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestReportsRender(t *testing.T) {
 }
 
 func TestMissingFile(t *testing.T) {
-	if _, err := Run(Options{Inputs: []string{"does-not-exist.json"}}); err == nil {
+	if _, err := Run(context.Background(), Options{Inputs: []string{"does-not-exist.json"}}); err == nil {
 		t.Fatal("expected error")
 	}
 }

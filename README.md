@@ -29,6 +29,20 @@ fhub check trivy.json grype.json semgrep.sarif --fail-on P0,P1
 Exit codes: `0` passed · `1` security gate failed · `2` error.
 Formats: `--format table|json|markdown`.
 
+### Exploit intelligence
+
+`fhub check` downloads and caches CISA KEV and FIRST EPSS (about 5 MB, refreshed at most daily) and resolves
+GHSA-style advisory IDs to CVEs through OSV. For air-gapped or reproducible runs:
+
+```bash
+fhub db update          # fetch feeds (online)
+fhub db status          # what is cached and how old it is
+fhub --offline check …  # never touch the network
+```
+
+If no exploit data is available, `check` fails instead of silently ranking by severity alone.
+Use `--no-enrich` to opt out on purpose.
+
 **Status:** pre-alpha, under active development. See [docs/DESIGN.md](docs/DESIGN.md).
 
 ## License
