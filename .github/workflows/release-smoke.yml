@@ -2,9 +2,16 @@ name: release-smoke
 
 # Verifies a published release the way a user would: signature, provenance,
 # and the GitHub Action installing the real release binary on every OS.
+#
+# Called by release.yml after publishing. (A "release: published" trigger would
+# never fire: GitHub doesn't start workflows from events created with
+# GITHUB_TOKEN, which GoReleaser uses.) Can also be run by hand.
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       tag:
@@ -15,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  TAG: ${{ inputs.tag }}
 
 jobs:
   verify:

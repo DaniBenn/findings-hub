@@ -12,6 +12,9 @@
    - writes an SPDX SBOM per archive
    - signs `checksums.txt` keylessly with Sigstore cosign
    - adds GitHub build-provenance attestations (public repos only)
+   - runs `release-smoke.yml` against the published release: cosign signature, checksums, provenance, and the
+     Action installing the real binary on Linux, macOS and Windows. To re-run it by hand:
+     `gh workflow run release-smoke.yml -f tag=vX.Y.Z`
 
 Tags with a suffix (`v0.2.0-rc.1`) are published as pre-releases.
 

@@ -85,7 +85,7 @@ fhub explain CVE-2024-3094                          # quick KEV/EPSS lookup, no 
 
 ```yaml
 - run: trivy fs --format json -o trivy.json .
-- uses: DaniBenn/findings-hub@v0.1.0   # better: pin to the release's commit SHA
+- uses: DaniBenn/findings-hub@v0.1.1   # better: pin to the release's commit SHA
   with:
     files: trivy.json semgrep.sarif
     fail-on: P0,P1
