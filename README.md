@@ -29,6 +29,25 @@ fhub check trivy.json grype.json semgrep.sarif --fail-on P0,P1
 Exit codes: `0` passed · `1` security gate failed · `2` error.
 Formats: `--format table|json|markdown`.
 
+### Why is this P0?
+
+```bash
+fhub explain CVE-2021-44228 trivy.json grype.json   # full reasoning, sources, exploit data
+fhub explain CVE-2024-3094                          # quick KEV/EPSS lookup, no scan needed
+```
+
+### GitHub Action
+
+```yaml
+- run: trivy fs --format json -o trivy.json .
+- uses: DaniBenn/findings-hub@v0  # pin to a commit SHA in production
+  with:
+    files: trivy.json semgrep.sarif
+    fail-on: P0,P1
+```
+
+The action downloads a checksum-verified release, caches the exploit data daily, and writes a Markdown summary to the job page.
+
 ### Policy, suppressions and baselines
 
 ```bash

@@ -14,10 +14,10 @@ jobs:
     # minutes 2x/10x faster. Add them to the matrix once the repo is public.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -26,6 +26,34 @@ jobs:
       - run: go test -race ./...
       - name: cross-compile
         run: |
-          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
+          for target in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64 windows/arm64; do
             GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -o /dev/null ./cmd/fhub
           done
+
+  action:
+    # Exercise the composite action against this repo's fixtures, using a
+    # binary built from this commit (no release needed).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go build -o "$RUNNER_TEMP/fhub-bin/fhub" ./cmd/fhub
+      - id: fhub
+        uses: ./
+        with:
+          files: testdata/trivy-fs.json testdata/grype-dir.json testdata/*.sarif
+          fail-on: P0
+          binary: ${{ runner.temp }}/fhub-bin/fhub
+          fail: "false"
+      - name: assert the gate tripped on the fixtures
+        env:
+          RESULT: ${{ steps.fhub.outputs.result }}
+          BLOCKING: ${{ steps.fhub.outputs.blocking }}
+        run: |
+          echo "result=$RESULT blocking=$BLOCKING"
+          test "$RESULT" = "failed"
+          test "$BLOCKING" -ge 1
