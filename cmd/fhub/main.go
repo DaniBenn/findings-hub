@@ -84,7 +84,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "", "exploit-intelligence cache (default: $FHUB_CACHE_DIR or the OS user cache dir)")
 	root.PersistentFlags().BoolVar(&g.offline, "offline", false, "never access the network; use cached data only")
 	root.PersistentFlags().StringVar(&g.policyPath, "policy", "", "policy file (default: "+policy.DefaultFile+" if present)")
-	root.AddCommand(newCheckCmd(g), newDBCmd(g), newBaselineCmd(g), newInitCmd())
+	root.AddCommand(newCheckCmd(g), newExplainCmd(g), newDBCmd(g), newBaselineCmd(g), newInitCmd())
 	return root
 }
 
@@ -97,6 +97,8 @@ func newCheckCmd(g *globalFlags) *cobra.Command {
 		newOnly      bool
 		showAll      bool
 		baselinePath string
+		reportJSON   string
+		reportMD     string
 	)
 	cmd := &cobra.Command{
 		Use:   "check [flags] <scanner-output>...",
@@ -164,6 +166,14 @@ Use "-" to read a single input from stdin.`,
 			if err := report.Write(w, rep, format); err != nil {
 				return err
 			}
+			for path, extraFormat := range map[string]string{reportJSON: "json", reportMD: "markdown"} {
+				if path == "" {
+					continue
+				}
+				if err := writeReportFile(path, rep, extraFormat); err != nil {
+					return err
+				}
+			}
 			if rep.Summary.GateFailed {
 				fmt.Fprintf(cmd.ErrOrStderr(), "fhub: security gate FAILED: %d finding(s) at %s\n",
 					rep.Summary.Blocking, strings.Join(rep.Summary.GateFailOn, ","))
@@ -179,7 +189,21 @@ Use "-" to read a single input from stdin.`,
 	cmd.Flags().BoolVar(&newOnly, "new-only", false, "only fail on findings not in the baseline (or escalated since); same as gate.new_only")
 	cmd.Flags().StringVar(&baselinePath, "baseline", policy.DefaultBaselineFile, "baseline file used with --new-only / gate.new_only")
 	cmd.Flags().BoolVar(&showAll, "show-all", false, "also list suppressed and baselined findings")
+	cmd.Flags().StringVar(&reportJSON, "report-json", "", "additionally write the full JSON report to this file")
+	cmd.Flags().StringVar(&reportMD, "report-markdown", "", "additionally write a Markdown summary (for PR comments / job summaries) to this file")
 	return cmd
+}
+
+func writeReportFile(path string, rep report.Report, format string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := report.Write(f, rep, format); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // checkOptions builds pipeline options shared by `check` and `baseline create`.

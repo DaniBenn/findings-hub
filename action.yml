@@ -1,0 +1,143 @@
+name: fhub security gate
+description: Merge every scanner's output, prioritize by real-world exploitability (CISA KEV, EPSS) and gate the build.
+author: DaniBenn
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  files:
+    description: Scanner output files (SARIF, Trivy JSON, Grype JSON). Space- or newline-separated; globs allowed.
+    required: true
+  fail-on:
+    description: Comma-separated priorities that fail the gate, e.g. "P0,P1". Empty = use .fhub.yaml (default P0).
+    default: ""
+  policy:
+    description: Path to the policy file. Empty = .fhub.yaml if present.
+    default: ""
+  new-only:
+    description: Only fail on findings not in the baseline (or escalated since).
+    default: "false"
+  fail:
+    description: Fail this step when the gate fails. Set "false" to only report (use the "result" output).
+    default: "true"
+  version:
+    description: fhub release to install, e.g. "v0.1.0", or "latest".
+    default: latest
+  binary:
+    description: Path to an existing fhub binary (skips download). Mainly for testing.
+    default: ""
+  github-token:
+    description: Token used to download the release.
+    default: ${{ github.token }}
+
+outputs:
+  result:
+    description: '"passed" or "failed"'
+    value: ${{ steps.check.outputs.result }}
+  blocking:
+    description: Number of findings that hit the gate.
+    value: ${{ steps.check.outputs.blocking }}
+  report:
+    description: Path to the full JSON report.
+    value: ${{ steps.check.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    # All inputs reach scripts through env vars, never via ${{ }} inside
+    # run: blocks, so they cannot inject shell commands.
+    - id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_BINARY: ${{ inputs.binary }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        ACTION_REPO: ${{ github.action_repository }}
+      run: |
+        set -euo pipefail
+        echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+        if [ -n "$INPUT_BINARY" ]; then
+          echo "FHUB=$INPUT_BINARY" >> "$GITHUB_ENV"
+          exit 0
+        fi
+        repo="${ACTION_REPO:-DaniBenn/findings-hub}"
+        case "$RUNNER_OS" in
+          Linux) os=linux; ext=tar.gz ;;
+          macOS) os=darwin; ext=tar.gz ;;
+          Windows) os=windows; ext=zip ;;
+          *) echo "unsupported runner OS $RUNNER_OS"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "unsupported runner arch $RUNNER_ARCH"; exit 1 ;;
+        esac
+        tag="$INPUT_VERSION"
+        if [ "$tag" = "latest" ]; then
+          tag="$(gh release view --repo "$repo" --json tagName --jq .tagName)"
+        fi
+        case "$tag" in v[0-9]*) ;; *) echo "invalid version '$tag'"; exit 1 ;; esac
+        asset="fhub_${tag#v}_${os}_${arch}.${ext}"
+        dir="$RUNNER_TEMP/fhub-$tag"
+        mkdir -p "$dir"
+        gh release download "$tag" --repo "$repo" --dir "$dir" --pattern "$asset" --pattern checksums.txt --clobber
+        cd "$dir"
+        # Integrity: the archive must match the release's checksums.txt.
+        if command -v sha256sum >/dev/null; then sum="sha256sum"; else sum="shasum -a 256"; fi
+        grep " ${asset}\$" checksums.txt | $sum -c -
+        tar -xf "$asset"
+        bin="$dir/fhub"; [ "$os" = windows ] && bin="$dir/fhub.exe"
+        echo "FHUB=$bin" >> "$GITHUB_ENV"
+        "$bin" --version
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/fhub-cache
+        key: fhub-intel-${{ steps.install.outputs.date }}
+        restore-keys: fhub-intel-
+
+    - id: check
+      shell: bash
+      env:
+        INPUT_FILES: ${{ inputs.files }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_POLICY: ${{ inputs.policy }}
+        INPUT_NEW_ONLY: ${{ inputs.new-only }}
+        INPUT_FAIL: ${{ inputs.fail }}
+        FHUB_CACHE_DIR: ${{ runner.temp }}/fhub-cache
+      run: |
+        # GitHub runs "shell: bash" with -e; fhub exits 1 when the gate fails,
+        # which we must capture (not abort on) to set outputs and honor fail:false.
+        set +e -uo pipefail
+        shopt -s nullglob globstar
+        read -r -d '' -a patterns <<< "$INPUT_FILES" || true
+        files=()
+        for p in "${patterns[@]}"; do
+          matches=( $p )
+          if [ ${#matches[@]} -eq 0 ]; then echo "::error::no file matches '$p'"; exit 2; fi
+          files+=( "${matches[@]}" )
+        done
+
+        args=(check)
+        [ -n "$INPUT_FAIL_ON" ] && args+=(--fail-on "$INPUT_FAIL_ON")
+        [ -n "$INPUT_POLICY" ] && args+=(--policy "$INPUT_POLICY")
+        [ "$INPUT_NEW_ONLY" = "true" ] && args+=(--new-only)
+        report="$RUNNER_TEMP/fhub-report.json"
+        args+=(--report-json "$report" --report-markdown "$RUNNER_TEMP/fhub-summary.md" -- "${files[@]}")
+
+        code=0
+        "$FHUB" "${args[@]}" || code=$?
+        [ -f "$RUNNER_TEMP/fhub-summary.md" ] && cat "$RUNNER_TEMP/fhub-summary.md" >> "$GITHUB_STEP_SUMMARY"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        if [ -f "$report" ]; then
+          # No jq dependency (self-hosted runners may lack it); our JSON is stable.
+          blocking="$(grep -oE '"blocking_findings": *[0-9]+' "$report" | grep -oE '[0-9]+$' || true)"
+          echo "blocking=${blocking:-0}" >> "$GITHUB_OUTPUT"
+        fi
+        case $code in
+          0) echo "result=passed" >> "$GITHUB_OUTPUT" ;;
+          1) echo "result=failed" >> "$GITHUB_OUTPUT"
+             if [ "$INPUT_FAIL" = "true" ]; then exit 1; fi ;;
+          *) echo "::error::fhub failed with exit code $code"; exit "$code" ;;
+        esac

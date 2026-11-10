@@ -83,8 +83,8 @@ func Assess(f model.Finding, cfg Config) (model.Priority, []string) {
 		reasons = append(reasons, "dev-only dependency: lowered one level")
 	}
 
-	if f.Kind == model.KindVuln {
-		if f.Package != nil && f.Package.FixedVersion != "" {
+	if f.Kind == model.KindVuln && f.Package != nil {
+		if f.Package.FixedVersion != "" {
 			reasons = append(reasons, "fix available: upgrade to "+f.Package.FixedVersion)
 		} else {
 			reasons = append(reasons, "no fix available yet")
