@@ -107,7 +107,9 @@ runs:
         INPUT_FAIL: ${{ inputs.fail }}
         FHUB_CACHE_DIR: ${{ runner.temp }}/fhub-cache
       run: |
-        set -uo pipefail
+        # GitHub runs "shell: bash" with -e; fhub exits 1 when the gate fails,
+        # which we must capture (not abort on) to set outputs and honor fail:false.
+        set +e -uo pipefail
         shopt -s nullglob globstar
         read -r -d '' -a patterns <<< "$INPUT_FILES" || true
         files=()
@@ -124,12 +126,14 @@ runs:
         report="$RUNNER_TEMP/fhub-report.json"
         args+=(--report-json "$report" --report-markdown "$RUNNER_TEMP/fhub-summary.md" -- "${files[@]}")
 
-        "$FHUB" "${args[@]}"
-        code=$?
+        code=0
+        "$FHUB" "${args[@]}" || code=$?
         [ -f "$RUNNER_TEMP/fhub-summary.md" ] && cat "$RUNNER_TEMP/fhub-summary.md" >> "$GITHUB_STEP_SUMMARY"
         echo "report=$report" >> "$GITHUB_OUTPUT"
-        if [ -f "$report" ] && command -v jq >/dev/null; then
-          echo "blocking=$(jq .summary.blocking_findings "$report")" >> "$GITHUB_OUTPUT"
+        if [ -f "$report" ]; then
+          # No jq dependency (self-hosted runners may lack it); our JSON is stable.
+          blocking="$(grep -oE '"blocking_findings": *[0-9]+' "$report" | grep -oE '[0-9]+$' || true)"
+          echo "blocking=${blocking:-0}" >> "$GITHUB_OUTPUT"
         fi
         case $code in
           0) echo "result=passed" >> "$GITHUB_OUTPUT" ;;
