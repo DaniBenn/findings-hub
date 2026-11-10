@@ -17,7 +17,7 @@ import (
 	"github.com/DaniBenn/findings-hub/internal/check"
 	"github.com/DaniBenn/findings-hub/internal/enrich"
 	"github.com/DaniBenn/findings-hub/internal/model"
-	"github.com/DaniBenn/findings-hub/internal/prioritize"
+	"github.com/DaniBenn/findings-hub/internal/policy"
 	"github.com/DaniBenn/findings-hub/internal/report"
 )
 
@@ -51,8 +51,9 @@ func main() {
 
 // globalFlags are shared by every command.
 type globalFlags struct {
-	cacheDir string
-	offline  bool
+	cacheDir   string
+	offline    bool
+	policyPath string
 }
 
 func (g *globalFlags) enrichOptions(cmd *cobra.Command) (enrich.Options, error) {
@@ -82,16 +83,20 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&g.cacheDir, "cache-dir", "", "exploit-intelligence cache (default: $FHUB_CACHE_DIR or the OS user cache dir)")
 	root.PersistentFlags().BoolVar(&g.offline, "offline", false, "never access the network; use cached data only")
-	root.AddCommand(newCheckCmd(g), newDBCmd(g))
+	root.PersistentFlags().StringVar(&g.policyPath, "policy", "", "policy file (default: "+policy.DefaultFile+" if present)")
+	root.AddCommand(newCheckCmd(g), newDBCmd(g), newBaselineCmd(g), newInitCmd())
 	return root
 }
 
 func newCheckCmd(g *globalFlags) *cobra.Command {
 	var (
-		format   string
-		failOn   string
-		output   string
-		noEnrich bool
+		format       string
+		failOn       string
+		output       string
+		noEnrich     bool
+		newOnly      bool
+		showAll      bool
+		baselinePath string
 	)
 	cmd := &cobra.Command{
 		Use:   "check [flags] <scanner-output>...",
@@ -100,6 +105,9 @@ func newCheckCmd(g *globalFlags) *cobra.Command {
 merges duplicates across scanners, enriches vulnerabilities with CISA KEV,
 FIRST EPSS and OSV data, assigns each finding a priority P0..P4 with reasons,
 and exits non-zero if any finding hits the --fail-on gate.
+
+Policy (thresholds, gate, expiring suppressions, baseline) is read from
+.fhub.yaml when present; create one with "fhub init".
 
 Exploit data is cached and refreshed at most once a day. If no data can be
 loaded the command fails rather than silently ranking by severity; pass
@@ -113,28 +121,35 @@ Use "-" to read a single input from stdin.`,
   fhub check trivy.json grype.json semgrep.sarif --fail-on P0,P1`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gate, err := parsePriorities(failOn)
+			pol, err := policy.Load(g.policyPath, time.Now())
 			if err != nil {
 				return err
 			}
-			opts := check.Options{
-				Inputs:     args,
-				FailOn:     gate,
-				Prioritize: prioritize.DefaultConfig(),
-				Tool:       report.Tool{Name: "fhub", Version: version},
+			opts, err := g.checkOptions(cmd, args, pol, noEnrich)
+			if err != nil {
+				return err
 			}
-			if !noEnrich {
-				eo, err := g.enrichOptions(cmd)
-				if err != nil {
+			if cmd.Flags().Changed("fail-on") {
+				if opts.FailOn, err = parsePriorities(failOn); err != nil {
 					return err
 				}
-				if opts.Enricher, err = enrich.Open(cmd.Context(), eo); err != nil {
+			}
+			if newOnly || pol.Gate.NewOnly {
+				path := pol.Gate.Baseline
+				if cmd.Flags().Changed("baseline") {
+					path = baselinePath
+				}
+				if opts.Baseline, err = policy.LoadBaseline(path); err != nil {
 					return err
 				}
 			}
 			rep, err := check.Run(cmd.Context(), opts)
 			if err != nil {
 				return err
+			}
+			rep.ShowAll = showAll
+			for _, warn := range rep.Summary.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), "fhub: warning:", warn)
 			}
 
 			w := cmd.OutOrStdout()
@@ -158,10 +173,120 @@ Use "-" to read a single input from stdin.`,
 		},
 	}
 	cmd.Flags().StringVarP(&format, "format", "f", "table", "output format: "+strings.Join(report.Formats, ", "))
-	cmd.Flags().StringVar(&failOn, "fail-on", "P0", `comma-separated priorities that fail the gate ("" disables the gate)`)
+	cmd.Flags().StringVar(&failOn, "fail-on", "P0", `comma-separated priorities that fail the gate ("" disables it); overrides gate.fail_on`)
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write the report to a file instead of stdout")
 	cmd.Flags().BoolVar(&noEnrich, "no-enrich", false, "skip exploit intelligence (KEV/EPSS/OSV) and rank by severity only")
+	cmd.Flags().BoolVar(&newOnly, "new-only", false, "only fail on findings not in the baseline (or escalated since); same as gate.new_only")
+	cmd.Flags().StringVar(&baselinePath, "baseline", policy.DefaultBaselineFile, "baseline file used with --new-only / gate.new_only")
+	cmd.Flags().BoolVar(&showAll, "show-all", false, "also list suppressed and baselined findings")
 	return cmd
+}
+
+// checkOptions builds pipeline options shared by `check` and `baseline create`.
+func (g *globalFlags) checkOptions(cmd *cobra.Command, args []string, pol *policy.Policy, noEnrich bool) (check.Options, error) {
+	opts := check.Options{
+		Inputs:     args,
+		FailOn:     pol.FailOn(),
+		Prioritize: pol.PrioritizeConfig(),
+		Policy:     pol,
+		Tool:       report.Tool{Name: "fhub", Version: version},
+	}
+	if !noEnrich {
+		eo, err := g.enrichOptions(cmd)
+		if err != nil {
+			return opts, err
+		}
+		if opts.Enricher, err = enrich.Open(cmd.Context(), eo); err != nil {
+			return opts, err
+		}
+	}
+	return opts, nil
+}
+
+func newBaselineCmd(g *globalFlags) *cobra.Command {
+	bl := &cobra.Command{
+		Use:   "baseline",
+		Short: "Manage the baseline of accepted pre-existing findings",
+		Long: `A baseline lets you adopt the gate on an existing codebase: findings in the
+baseline do not fail the build when gate.new_only is set (or --new-only is
+passed), so the gate only blocks NEW issues while you burn down the old ones.
+
+A baselined finding that escalates into a gating priority (for example
+because it was added to CISA KEV) fails the gate again.
+
+Commit the baseline file so changes to it are reviewed in pull requests.`,
+	}
+	var (
+		output   string
+		noEnrich bool
+	)
+	create := &cobra.Command{
+		Use:   "create [flags] <scanner-output>...",
+		Short: "Snapshot current open findings into a baseline file",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pol, err := policy.Load(g.policyPath, time.Now())
+			if err != nil {
+				return err
+			}
+			opts, err := g.checkOptions(cmd, args, pol, noEnrich)
+			if err != nil {
+				return err
+			}
+			opts.FailOn = nil
+			rep, err := check.Run(cmd.Context(), opts)
+			if err != nil {
+				return err
+			}
+			if !cmd.Flags().Changed("output") {
+				output = pol.Gate.Baseline
+			}
+			b := policy.NewBaseline(rep.Findings, version, time.Now(), func(f model.Finding) (string, string) {
+				return report.ID(f), report.Where(f)
+			})
+			if err := b.Write(output); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Wrote %d finding(s) to %s (%d suppressed findings excluded).\n",
+				len(b.Findings), output, rep.Summary.Suppressed)
+			if !pol.Gate.NewOnly {
+				fmt.Fprintln(cmd.OutOrStdout(), "Enable it with `gate: {new_only: true}` in .fhub.yaml, or pass --new-only to fhub check.")
+			}
+			return nil
+		},
+	}
+	create.Flags().StringVarP(&output, "output", "o", policy.DefaultBaselineFile, "baseline file to write (default: gate.baseline from the policy)")
+	create.Flags().BoolVar(&noEnrich, "no-enrich", false, "skip exploit intelligence")
+	bl.AddCommand(create)
+	return bl
+}
+
+func newInitCmd() *cobra.Command {
+	var force bool
+	return &cobra.Command{
+		Use:   "init",
+		Short: "Write a starter " + policy.DefaultFile + " policy file",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			flags := os.O_WRONLY | os.O_CREATE | os.O_EXCL
+			if force {
+				flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+			}
+			f, err := os.OpenFile(policy.DefaultFile, flags, 0o644)
+			if errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("%s already exists (use --force to overwrite)", policy.DefaultFile)
+			}
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := f.WriteString(policy.Template(time.Now())); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Wrote", policy.DefaultFile)
+			return nil
+		},
+	}
 }
 
 func newDBCmd(g *globalFlags) *cobra.Command {

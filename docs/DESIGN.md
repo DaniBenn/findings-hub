@@ -98,11 +98,23 @@ suppressions:
       justification: vulnerable_code_not_in_execute_path
 ```
 
-Rules: every suppression needs a `reason` and `expires`. Expired suppressions reactivate the
-finding and are called out loudly. Suppressions double as **OpenVEX** statements.
+Rules (implemented in `internal/policy`):
+- Unknown keys are errors, so a typo (`suppresions:`) can't silently disable the policy.
+- Every suppression needs a `reason` and an `expires` date (inclusive, **max 366 days** out, so accepted risk is re-reviewed yearly).
+- Matchers: `id` (CVE/GHSA/alias or rule ID), `fingerprint`, `package` (purl, optionally `@version`, or a bare name),
+  `path` (glob; `*` stays in one segment, `**` crosses segments). All matchers given must match.
+- Expired suppressions stop working: the finding is open again, with the old reason in its explanation, plus a warning.
+  Suppressions expiring within 14 days, and suppressions that match nothing, also warn.
+- Suppressed findings stay in the JSON output (`status: suppressed`) for auditability. Suppressions carry
+  **OpenVEX** status/justification for later export.
 
 **Baseline** (`.fhub-baseline.json`, committed to the repo) lets a team adopt `fhub` on a legacy
 codebase: "fail only on *new* P0s" from day one, and burn down the old ones over time.
+- `fhub baseline create <files…>` snapshots the open findings (suppressed ones are excluded, so their expiry still applies).
+- The file is sorted by fingerprint, so diffs are reviewable in PRs.
+- **Escalation:** a baselined finding whose priority rises *into* a gating priority (e.g. it lands in CISA KEV) fails the
+  gate again. A baseline never hides an issue that became exploited after it was accepted.
+- `gate.new_only: true` (or `--new-only`) without a baseline file is an error, not a silent pass.
 
 ## 7. CLI surface
 

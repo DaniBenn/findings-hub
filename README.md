@@ -29,6 +29,24 @@ fhub check trivy.json grype.json semgrep.sarif --fail-on P0,P1
 Exit codes: `0` passed · `1` security gate failed · `2` error.
 Formats: `--format table|json|markdown`.
 
+### Policy, suppressions and baselines
+
+```bash
+fhub init                                  # writes a commented .fhub.yaml
+fhub baseline create trivy.json grype.json # accept today's findings on a legacy codebase
+fhub check trivy.json grype.json --new-only
+```
+
+```yaml
+suppressions:
+  - id: CVE-2021-23337
+    package: pkg:npm/lodash
+    reason: "We never call _.template(); not reachable."
+    expires: 2027-01-31   # required, max 1 year: no permanent ignores
+```
+
+Expired suppressions stop working. A baselined finding that later lands in CISA KEV fails the gate again.
+
 ### Exploit intelligence
 
 `fhub check` downloads and caches CISA KEV and FIRST EPSS (about 5 MB, refreshed at most daily) and resolves

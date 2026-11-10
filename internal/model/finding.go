@@ -47,12 +47,35 @@ type Finding struct {
 	Priority Priority `json:"priority"`
 	Reasons  []string `json:"reasons,omitempty"`
 
+	// Status is open, suppressed (accepted risk) or baselined (pre-existing).
+	// Only open findings count toward the gate.
+	Status      Status       `json:"status"`
+	Suppression *Suppression `json:"suppression,omitempty"`
+
 	Sources []Source `json:"sources"`
 
 	// MatchHash is a SHA-256 of the matched content (normalized code line or
 	// secret value). It feeds fingerprinting so findings survive line moves.
 	// Raw secret values are NEVER stored anywhere in a Finding.
 	MatchHash string `json:"-"`
+}
+
+// Status of a finding with respect to policy.
+type Status string
+
+const (
+	StatusOpen       Status = "open"
+	StatusSuppressed Status = "suppressed"
+	StatusBaselined  Status = "baselined"
+)
+
+// Suppression records the accepted-risk decision applied to a finding.
+type Suppression struct {
+	Reason  string `json:"reason"`
+	Expires string `json:"expires"` // YYYY-MM-DD, inclusive
+	// VEXStatus/VEXJustification are carried through for OpenVEX export.
+	VEXStatus        string `json:"vex_status,omitempty"`
+	VEXJustification string `json:"vex_justification,omitempty"`
 }
 
 // Package identifies an affected dependency.
