@@ -1,0 +1,76 @@
+name: release-smoke
+
+# Verifies a published release the way a user would: signature, provenance,
+# and the GitHub Action installing the real release binary on every OS.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify (e.g. v0.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist
+      - name: cosign signature on checksums.txt
+        working-directory: dist
+        run: |
+          cosign verify-blob checksums.txt \
+            --bundle checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      - name: checksums
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+      - name: build provenance
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in fhub_*.tar.gz fhub_*.zip; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" > /dev/null && echo "provenance OK: $f"
+          done
+
+  action:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Uses the action from the repo with the REAL release binary (no "binary:").
+      - id: fhub
+        uses: ./
+        with:
+          version: ${{ env.TAG }}
+          files: testdata/trivy-fs.json testdata/grype-dir.json testdata/*.sarif
+          fail: "false"
+      - name: assert
+        shell: bash
+        env:
+          RESULT: ${{ steps.fhub.outputs.result }}
+          BLOCKING: ${{ steps.fhub.outputs.blocking }}
+        run: |
+          echo "result=$RESULT blocking=$BLOCKING"
+          test "$RESULT" = "failed"
+          test "$BLOCKING" -ge 2
