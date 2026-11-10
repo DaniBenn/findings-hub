@@ -38,3 +38,14 @@ jobs:
         if: ${{ !github.event.repository.private }}
         with:
           subject-checksums: dist/checksums.txt
+
+  # Verify the published release like a user would (signature, checksums,
+  # provenance, Action on all OSes).
+  smoke:
+    needs: release
+    permissions:
+      contents: read
+      attestations: read
+    uses: ./.github/workflows/release-smoke.yml
+    with:
+      tag: ${{ github.ref_name }}
